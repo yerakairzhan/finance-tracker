@@ -5,4 +5,4 @@ sql:
     schema: "./db/migrations"
     out: "./pkg/generated"
     package: "sqlc"
-    sql_package: "pgx"
+    sql_package: "database/sql"
