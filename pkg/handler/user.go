@@ -22,17 +22,17 @@ func NewUserHandler(repo *repository.UserRepository) *UserHandler {
 // POST /register
 func (h *UserHandler) Register(c *gin.Context) {
 	var req models.RegisterRequest
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	
+
 	user, err := h.repo.CreateUser(c.Request.Context(), req.Email, req.Name)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Fail"})
 		return
 	}
-	
+
 	c.JSON(http.StatusCreated, user)
 }
