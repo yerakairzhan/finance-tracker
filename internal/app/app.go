@@ -5,10 +5,10 @@ import (
 	"log"
 	"os"
 
-	"github.com/example/financial-intelligence-platform/config"
-	"github.com/example/financial-intelligence-platform/pkg/generated/sqlc"
-	"github.com/example/financial-intelligence-platform/pkg/handler"
-	"github.com/example/financial-intelligence-platform/pkg/repository"
+	"finance-tracker/config"
+	"finance-tracker/pkg/generated/sqlc"
+	"finance-tracker/pkg/handler"
+	"finance-tracker/pkg/repository"
 	"github.com/gin-gonic/gin"
 )
 

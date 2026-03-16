@@ -48,6 +48,11 @@ type CreateAccountRequest struct {
 	Currency    string `json:"currency" binding:"required"`
 }
 
+type UpdateUserRequest struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
 // ListTransactionsRequest is the query for listing transactions
 type ListTransactionsRequest struct {
 	AccountID int `form:"account_id" binding:"required"`

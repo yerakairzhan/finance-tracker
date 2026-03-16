@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/example/financial-intelligence-platform/pkg/repository"
+	"finance-tracker/pkg/repository"
 	"github.com/gin-gonic/gin"
 )
 

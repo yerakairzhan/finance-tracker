@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/example/financial-intelligence-platform/pkg/models"
-	"github.com/example/financial-intelligence-platform/pkg/repository"
+	"finance-tracker/pkg/models"
+	"finance-tracker/pkg/repository"
 	"github.com/gin-gonic/gin"
 )
 

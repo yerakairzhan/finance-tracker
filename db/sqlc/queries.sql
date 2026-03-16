@@ -8,6 +8,21 @@ SELECT id, email, name, created_at, updated_at
 FROM users
 WHERE id = $1;
 
+-- name: ListUsers :many
+SELECT id, email, name, created_at, updated_at
+FROM users
+ORDER BY id;
+
+-- name: UpdateUser :one
+UPDATE users
+SET email = $2, name = $3, updated_at = NOW()
+WHERE id = $1
+RETURNING id, email, name, created_at, updated_at;
+
+-- name: DeleteUser :exec
+DELETE FROM users
+WHERE id = $1;
+
 -- name: CreateAccount :one
 INSERT INTO accounts (user_id, account_type, balance, currency)
 VALUES ($1, $2, $3, $4)
