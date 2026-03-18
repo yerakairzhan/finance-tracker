@@ -1,21 +1,19 @@
 package handler
 
 import (
-	"net/http"
+	"strconv"
 
-	"finance-tracker/pkg/models"
-	"finance-tracker/pkg/repository"
 	"github.com/gin-gonic/gin"
+
+	"finance-tracker/pkg/repository"
 )
 
-// AccountHandler handles account-related HTTP requests
 type AccountHandler struct {
 	repo *repository.AccountRepository
 }
 
-// NewAccountHandler creates a new AccountHandler
-func NewAccountHandler(repo *repository.AccountRepository) *AccountHandler {
-	return &AccountHandler{repo: repo}
+func NewAccountHandler(r *repository.AccountRepository) *AccountHandler {
+	return &AccountHandler{repo: r}
 }
 
 // Create godoc
@@ -30,24 +28,94 @@ func NewAccountHandler(repo *repository.AccountRepository) *AccountHandler {
 // @Failure 500 {object} ErrorResponse
 // @Router /accounts [post]
 func (h *AccountHandler) Create(c *gin.Context) {
-	var req models.CreateAccountRequest
-	
+
+	var req struct {
+		UserID      int    `json:"user_id"`
+		AccountType string `json:"account_type"`
+		Currency    string `json:"currency"`
+		Balance     string `json:"balance"`
+	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	
-	account, err := h.repo.CreateAccount(
+
+	account, err := h.repo.Create(
 		c.Request.Context(),
 		req.UserID,
 		req.AccountType,
-		req.Balance,
 		req.Currency,
+		req.Balance,
 	)
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create account"})
+		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-	
-	c.JSON(http.StatusCreated, account)
+
+	c.JSON(201, account)
+}
+
+func (h *AccountHandler) GetByID(c *gin.Context) {
+
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	account, err := h.repo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(404, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, account)
+}
+
+func (h *AccountHandler) List(c *gin.Context) {
+
+	accounts, err := h.repo.List(c.Request.Context())
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, accounts)
+}
+
+func (h *AccountHandler) GetUserAccounts(c *gin.Context) {
+
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	accounts, err := h.repo.GetByUserID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, accounts)
+}
+
+func (h *AccountHandler) Delete(c *gin.Context) {
+
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	err := h.repo.Delete(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"message": "account deleted"})
+}
+
+func (h *AccountHandler) GetBalance(c *gin.Context) {
+
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	balance, err := h.repo.GetBalance(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(200, gin.H{"balance": balance})
 }

@@ -23,9 +23,14 @@ func (tr *TransactionRepository) CreateTransaction(
 	txType string,
 ) (*models.Transaction, error) {
 
-	row, err := tr.q.CreateTransaction(ctx, queries.CreateTransactionParams{
+	num, err := stringToNumeric(amount)
+	if err != nil {
+		return nil, err
+	}
+
+	row, err := tr.q.CreateTransaction(ctx, sqlc.CreateTransactionParams{
 		AccountID:       int32(accountID),
-		Amount:          amount,
+		Amount:          num,
 		Description:     description,
 		TransactionType: txType,
 	})
@@ -37,10 +42,10 @@ func (tr *TransactionRepository) CreateTransaction(
 	return &models.Transaction{
 		ID:              int(row.ID),
 		AccountID:       int(row.AccountID),
-		Amount:          row.Amount,
+		Amount:          numericToString(row.Amount),
 		Description:     row.Description,
 		TransactionType: row.TransactionType,
-		CreatedAt:       row.CreatedAt,
+		CreatedAt:       timestampToTime(row.CreatedAt),
 	}, nil
 }
 
@@ -59,11 +64,80 @@ func (tr *TransactionRepository) ListTransactionsByAccountID(ctx context.Context
 		transactions = append(transactions, models.Transaction{
 			ID:              int(row.ID),
 			AccountID:       int(row.AccountID),
-			Amount:          row.Amount,
+			Amount:          numericToString(row.Amount),
 			Description:     row.Description,
 			TransactionType: row.TransactionType,
-			CreatedAt:       row.CreatedAt,
+			CreatedAt:       timestampToTime(row.CreatedAt),
 		})
 	}
+	return transactions, nil
+}
+
+func (tr *TransactionRepository) GetByID(ctx context.Context, id int) (*models.Transaction, error) {
+	row, err := tr.q.GetTransactionByID(ctx, int32(id))
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.Transaction{
+		ID:              int(row.ID),
+		AccountID:       int(row.AccountID),
+		Amount:          numericToString(row.Amount),
+		Description:     row.Description,
+		TransactionType: row.TransactionType,
+		CreatedAt:       timestampToTime(row.CreatedAt),
+	}, nil
+}
+
+func (tr *TransactionRepository) List(ctx context.Context, limit, offset int) ([]models.Transaction, error) {
+	rows, err := tr.q.ListTransactions(ctx, sqlc.ListTransactionsParams{
+		Limit:  int32(limit),
+		Offset: int32(offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var transactions []models.Transaction
+	for _, row := range rows {
+		transactions = append(transactions, models.Transaction{
+			ID:              int(row.ID),
+			AccountID:       int(row.AccountID),
+			Amount:          numericToString(row.Amount),
+			Description:     row.Description,
+			TransactionType: row.TransactionType,
+			CreatedAt:       timestampToTime(row.CreatedAt),
+		})
+	}
+
+	return transactions, nil
+}
+
+func (tr *TransactionRepository) Delete(ctx context.Context, id int) error {
+	return tr.q.DeleteTransaction(ctx, int32(id))
+}
+
+func (tr *TransactionRepository) Search(ctx context.Context, query string, limit, offset int) ([]models.Transaction, error) {
+	rows, err := tr.q.SearchTransactions(ctx, sqlc.SearchTransactionsParams{
+		Description: stringToText(query),
+		Limit:       int32(limit),
+		Offset:      int32(offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var transactions []models.Transaction
+	for _, row := range rows {
+		transactions = append(transactions, models.Transaction{
+			ID:              int(row.ID),
+			AccountID:       int(row.AccountID),
+			Amount:          numericToString(row.Amount),
+			Description:     row.Description,
+			TransactionType: row.TransactionType,
+			CreatedAt:       timestampToTime(row.CreatedAt),
+		})
+	}
+
 	return transactions, nil
 }

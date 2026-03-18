@@ -8,48 +8,46 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"time"
+	"github.com/gin-gonic/gin"
 
-	"finance-tracker/db/queries"
-	_ "finance-tracker/docs"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"finance-tracker/pkg/generated/sqlc"
 	"finance-tracker/pkg/handler"
 	"finance-tracker/pkg/repository"
-
-	"github.com/gin-gonic/gin"
-	_ "github.com/jackc/pgx/v5/stdlib"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func Run() {
+
 	// DATABASE CONNECTION STRING
-	dbURL := getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5435/finance_tracker?sslmode=disable")
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/financial_intelligence?sslmode=disable"
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	db, err := sql.Open("pgx", dbURL)
+	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		log.Fatal("Failed to connect to database:", err)
 	}
-	defer db.Close()
 
-	// Verify connection
-	if err := db.PingContext(ctx); err != nil {
+	if err := pool.Ping(ctx); err != nil {
 		log.Fatal("Database unreachable:", err)
 	}
 
 	log.Println("Connected to PostgreSQL")
 
-	q := queries.New(db) // ✅ db implements DBTX
+	queries := sqlc.New(pool)
 
 	// REPOSITORIES
-	userRepo := repository.NewUserRepository(q)
-	accountRepo := repository.NewAccountRepository(q)
-	transactionRepo := repository.NewTransactionRepository(q)
+	userRepo := repository.NewUserRepository(queries)
+	accountRepo := repository.NewAccountRepository(queries)
+	transactionRepo := repository.NewTransactionRepository(queries)
 
 	// HANDLERs
 	userHandler := handler.NewUserHandler(userRepo)
@@ -58,12 +56,6 @@ func Run() {
 
 	// GIN ROUTER
 	router := gin.Default()
-
-	// Swagger UI
-	router.GET("/docs", func(c *gin.Context) {
-		c.Redirect(302, "/docs/index.html")
-	})
-	router.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// API ROUTES
 	api := router.Group("")
@@ -82,21 +74,38 @@ func Run() {
 		// Accounts
 		api.POST("/accounts", accountHandler.Create)
 
+		api.GET("/accounts", accountHandler.List)
+
+		api.GET("/accounts/:id", accountHandler.GetByID)
+
+		api.GET("/users/:id/accounts", accountHandler.GetUserAccounts)
+
+		api.DELETE("/accounts/:id", accountHandler.Delete)
+
+		api.GET("/accounts/:id/balance", accountHandler.GetBalance)
+
 		// Transactions
+		api.POST("/transactions", transactionHandler.Create)
+
 		api.GET("/transactions", transactionHandler.List)
+
+		api.GET("/transactions/:id", transactionHandler.GetByID)
+
+		api.GET("/accounts/:id/transactions", transactionHandler.GetByAccount)
+
+		api.DELETE("/transactions/:id", transactionHandler.Delete)
+
+		api.GET("/transactions/search", transactionHandler.Search)
+
+		api.GET("/transactions/export", transactionHandler.Export)
 	}
 
 	// START SERVER
-	port := getenv("PORT", "8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
 	log.Println("Server running on port", port)
 	router.Run(":" + port)
-}
-
-func getenv(key, fallback string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	return value
 }

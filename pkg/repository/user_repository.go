@@ -29,8 +29,8 @@ func (ur *UserRepository) CreateUser(ctx context.Context, email, name string) (*
 		ID:        int(row.ID),
 		Email:     row.Email,
 		Name:      row.Name,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		CreatedAt: timestamptzToTime(row.CreatedAt),
+		UpdatedAt: timestamptzToTime(row.UpdatedAt),
 	}, nil
 }
 
@@ -44,8 +44,8 @@ func (ur *UserRepository) GetUserByID(ctx context.Context, id int) (*models.User
 		ID:        int(row.ID),
 		Email:     row.Email,
 		Name:      row.Name,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		CreatedAt: timestamptzToTime(row.CreatedAt),
+		UpdatedAt: timestamptzToTime(row.UpdatedAt),
 	}, nil
 }
 
@@ -62,8 +62,8 @@ func (ur *UserRepository) ListUsers(ctx context.Context) ([]models.User, error) 
 			ID:        int(row.ID),
 			Email:     row.Email,
 			Name:      row.Name,
-			CreatedAt: row.CreatedAt,
-			UpdatedAt: row.UpdatedAt,
+			CreatedAt: timestamptzToTime(row.CreatedAt),
+			UpdatedAt: timestamptzToTime(row.UpdatedAt),
 		})
 	}
 
@@ -86,8 +86,8 @@ func (ur *UserRepository) UpdateUser(ctx context.Context, id int, email, name st
 		ID:        int(row.ID),
 		Email:     row.Email,
 		Name:      row.Name,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		CreatedAt: timestamptzToTime(row.CreatedAt),
+		UpdatedAt: timestamptzToTime(row.UpdatedAt),
 	}, nil
 }
 

@@ -6,6 +6,7 @@ import (
 
 	"finance-tracker/pkg/repository"
 	"github.com/gin-gonic/gin"
+	"finance-tracker/pkg/models"
 )
 
 // TransactionHandler handles transaction-related HTTP requests
@@ -18,32 +19,41 @@ func NewTransactionHandler(repo *repository.TransactionRepository) *TransactionH
 	return &TransactionHandler{repo: repo}
 }
 
-// List godoc
-// @Summary List transactions
-// @Description List transactions for an account
-// @Tags transactions
-// @Produce json
-// @Param account_id query int true "Account ID"
-// @Param limit query int false "Limit (default 50)"
-// @Param offset query int false "Offset (default 0)"
-// @Success 200 {array} Transaction
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
-// @Router /transactions [get]
+// POST /transactions
+func (h *TransactionHandler) Create(c *gin.Context) {
+	var req struct {
+		AccountID   int    `json:"account_id"`
+		Amount      string `json:"amount"`
+		Description string `json:"description"`
+		Type        string `json:"type"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+
+	tx, err := h.repo.CreateTransaction(
+		c.Request.Context(),
+		req.AccountID,
+		req.Amount,
+		req.Description,
+		req.Type,
+	)
+
+	if err != nil {
+		c.JSON(500, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(201, tx)
+}
+
+// List returns a list of transactions (either all or filtered by account_id)
+// GET /transactions?account_id 
 func (h *TransactionHandler) List(c *gin.Context) {
 	accountIDStr := c.Query("account_id")
-	if accountIDStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "account_id is required"})
-		return
-	}
 
-	accountID, err := strconv.Atoi(accountIDStr)
-	if err != nil || accountID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "account_id must be a positive integer"})
-		return
-	}
-
-	// Parse limit and offset with sane defaults.
 	limit := 50
 	offset := 0
 
@@ -59,17 +69,132 @@ func (h *TransactionHandler) List(c *gin.Context) {
 	if o := c.Query("offset"); o != "" {
 		parsedOffset, err := strconv.Atoi(o)
 		if err != nil || parsedOffset < 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "offset must be a non-negative integer"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "offset must be non-negative"})
 			return
 		}
 		offset = parsedOffset
 	}
 
-	transactions, err := h.repo.ListTransactionsByAccountID(c.Request.Context(), accountID, limit, offset)
+	var (
+		transactions []models.Transaction
+		err          error
+	)
+
+	// ✅ Conditional logic
+	if accountIDStr != "" {
+		accountID, err := strconv.Atoi(accountIDStr)
+		if err != nil || accountID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid account_id"})
+			return
+		}
+
+		transactions, err = h.repo.ListTransactionsByAccountID(
+			c.Request.Context(),
+			accountID,
+			limit,
+			offset,
+		)
+	} else {
+		transactions, err = h.repo.List(
+			c.Request.Context(),
+			limit,
+			offset,
+		)
+	}
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch transactions"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch transactions"})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, transactions)
+}
+
+// GET /transactions/:id
+func (h *TransactionHandler) GetByID(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	tx, err := h.repo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "transaction not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tx)
+}
+
+
+// DELETE /transactions/:id
+func (h *TransactionHandler) Delete(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+
+	if err := h.repo.Delete(c.Request.Context(), id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
+}
+
+// GET account/:id/transactions
+func (h *TransactionHandler) GetByAccount(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid account id"})
+		return
+	}
+
+	limit := 50
+	offset := 0
+
+	txs, err := h.repo.ListTransactionsByAccountID(
+		c.Request.Context(),
+		id,
+		limit,
+		offset,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch"})
+		return
+	}
+
+	c.JSON(http.StatusOK, txs)
+}
+
+// GET /transactions/search?q=keyword
+func (h *TransactionHandler) Search(c *gin.Context) {
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "q is required"})
+		return
+	}
+
+	txs, err := h.repo.Search(c.Request.Context(), query, 50, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "search failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, txs)
+}
+
+// GET /transactions/export
+func (h *TransactionHandler) Export(c *gin.Context) {
+	txs, err := h.repo.List(c.Request.Context(), 1000, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "export failed"})
+		return
+	}
+
+	c.Header("Content-Disposition", "attachment; filename=transactions.json")
+	c.JSON(http.StatusOK, txs)
 }

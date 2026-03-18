@@ -15,18 +15,39 @@ func NewAccountRepository(q *queries.Queries) *AccountRepository {
 	return &AccountRepository{q: q}
 }
 
-func (ar *AccountRepository) CreateAccount(
+
+/*
+Helper: convert sqlc row -> models.Account
+*/
+func mapAccount(row sqlc.Account) models.Account {
+	return models.Account{
+		ID:          int(row.ID),
+		UserID:      int(row.UserID),
+		AccountType: row.AccountType,
+		Balance:     numericToString(row.Balance),
+		Currency:    row.Currency,
+		CreatedAt:   timestampToTime(row.CreatedAt),
+		UpdatedAt:   timestampToTime(row.UpdatedAt),
+	}
+}
+
+func (ar *AccountRepository) Create(
 	ctx context.Context,
 	userID int,
-	accountType,
-	balance,
+	accType string,
 	currency string,
+	balance string,
 ) (*models.Account, error) {
 
-	row, err := ar.q.CreateAccount(ctx, queries.CreateAccountParams{
+	num, err := stringToNumeric(balance)
+	if err != nil {
+		return nil, err
+	}
+	
+	row, err := ar.q.CreateAccount(ctx, sqlc.CreateAccountParams{
 		UserID:      int32(userID),
-		AccountType: accountType,
-		Balance:     balance,
+		AccountType: accType,
+		Balance:     num,
 		Currency:    currency,
 	})
 
@@ -34,34 +55,63 @@ func (ar *AccountRepository) CreateAccount(
 		return nil, err
 	}
 
-	return &models.Account{
-		ID:          int(row.ID),
-		UserID:      int(row.UserID),
-		AccountType: row.AccountType,
-		Balance:     row.Balance,
-		Currency:    row.Currency,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
-	}, nil
+	account := mapAccount(row)
+	return &account, nil
 }
 
-// GetAccountsByUserID retrieves all accounts for a user
-func (ar *AccountRepository) GetAccountsByUserID(ctx context.Context, userID int) ([]models.Account, error) {
+func (ar *AccountRepository) GetByID(ctx context.Context, id int) (*models.Account, error) {
+
+	row, err := ar.q.GetAccountByID(ctx, int32(id))
+	if err != nil {
+		return nil, err
+	}
+
+	account := mapAccount(row)
+	return &account, nil
+}
+
+func (ar *AccountRepository) List(ctx context.Context) ([]models.Account, error) {
+
+	rows, err := ar.q.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	accounts := make([]models.Account, 0, len(rows))
+
+	for _, row := range rows {
+		accounts = append(accounts, mapAccount(row))
+	}
+
+	return accounts, nil
+}
+
+func (ar *AccountRepository) GetByUserID(ctx context.Context, userID int) ([]models.Account, error) {
+
 	rows, err := ar.q.GetAccountsByUserID(ctx, int32(userID))
 	if err != nil {
 		return nil, err
 	}
-	var accounts []models.Account
+
+	accounts := make([]models.Account, 0, len(rows))
+
 	for _, row := range rows {
-		accounts = append(accounts, models.Account{
-			ID:          int(row.ID),
-			UserID:      int(row.UserID),
-			AccountType: row.AccountType,
-			Balance:     row.Balance,
-			Currency:    row.Currency,
-			CreatedAt:   row.CreatedAt,
-			UpdatedAt:   row.UpdatedAt,
-		})
+		accounts = append(accounts, mapAccount(row))
 	}
+
 	return accounts, nil
+}
+
+func (ar *AccountRepository) Delete(ctx context.Context, id int) error {
+	return ar.q.DeleteAccount(ctx, int32(id))
+}
+
+func (ar *AccountRepository) GetBalance(ctx context.Context, id int) (string, error) {
+
+	num, err := ar.q.GetAccountBalance(ctx, int32(id))
+	if err != nil {
+		return "", err
+	}
+
+	return numericToString(num), nil
 }

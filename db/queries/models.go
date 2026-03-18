@@ -5,32 +5,32 @@
 package queries
 
 import (
-	"time"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Account struct {
 	ID          int32
 	UserID      int32
 	AccountType string
-	Balance     string
+	Balance     pgtype.Numeric
 	Currency    string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
 }
 
 type Transaction struct {
 	ID              int32
 	AccountID       int32
-	Amount          string
+	Amount          pgtype.Numeric
 	Description     string
 	TransactionType string
-	CreatedAt       time.Time
+	CreatedAt       pgtype.Timestamp
 }
 
 type User struct {
 	ID        int32
 	Email     string
 	Name      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
 }
