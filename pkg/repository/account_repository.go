@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"finance-tracker/db/queries"
+	"finance-tracker/db/sqlc/queries"
 	"finance-tracker/pkg/models"
 )
 
