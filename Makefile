@@ -1,4 +1,4 @@
-.PHONY: help run dev test tidy fmt sqlc swagger gen docker-up docker-down docker-logs migrate
+.PHONY: help run dev test tidy fmt sqlc swagger gen docker-up docker-down docker-logs docker-run docker-stop migrate
 
 APP_PKG := ./cmd/api
 SWAG    := go run github.com/swaggo/swag/cmd/swag@v1.16.6
@@ -20,6 +20,8 @@ help:
 	@printf "%s\n" "  docker-up    docker compose up --build"
 	@printf "%s\n" "  docker-down  docker compose down"
 	@printf "%s\n" "  docker-logs  docker compose logs -f"
+	@printf "%s\n" "  docker-run   docker compose up --build -d"
+	@printf "%s\n" "  docker-stop  docker compose down"
 	@printf "%s\n" "  migrate      apply db/migrations/001_init.sql using psql and DATABASE_URL"
 
 run:
@@ -56,7 +58,11 @@ docker-down:
 docker-logs:
 	@docker compose logs -f
 
+docker-run:
+	@docker compose up --build -d
+
+docker-stop: docker-down
+
 migrate:
 	@command -v psql >/dev/null 2>&1 || { echo "psql not found. Install Postgres client tools."; exit 1; }
 	@psql "$(DATABASE_URL)" -f db/migrations/001_init.sql
-

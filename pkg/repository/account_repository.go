@@ -3,18 +3,17 @@ package repository
 import (
 	"context"
 
-	"finance-tracker/db/sqlc/queries"
+	sqlc "finance-tracker/db/queries"
 	"finance-tracker/pkg/models"
 )
 
 type AccountRepository struct {
-	q *queries.Queries
+	q *sqlc.Queries
 }
 
-func NewAccountRepository(q *queries.Queries) *AccountRepository {
+func NewAccountRepository(q *sqlc.Queries) *AccountRepository {
 	return &AccountRepository{q: q}
 }
-
 
 /*
 Helper: convert sqlc row -> models.Account
@@ -43,7 +42,7 @@ func (ar *AccountRepository) Create(
 	if err != nil {
 		return nil, err
 	}
-	
+
 	row, err := ar.q.CreateAccount(ctx, sqlc.CreateAccountParams{
 		UserID:      int32(userID),
 		AccountType: accType,

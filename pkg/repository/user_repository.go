@@ -3,20 +3,20 @@ package repository
 import (
 	"context"
 
-	"finance-tracker/db/sqlc/queries"
+	sqlc "finance-tracker/db/queries"
 	"finance-tracker/pkg/models"
 )
 
 type UserRepository struct {
-	q *queries.Queries
+	q *sqlc.Queries
 }
 
-func NewUserRepository(q *queries.Queries) *UserRepository {
+func NewUserRepository(q *sqlc.Queries) *UserRepository {
 	return &UserRepository{q: q}
 }
 
 func (ur *UserRepository) CreateUser(ctx context.Context, email, name string) (*models.User, error) {
-	row, err := ur.q.CreateUser(ctx, queries.CreateUserParams{
+	row, err := ur.q.CreateUser(ctx, sqlc.CreateUserParams{
 		Email: email,
 		Name:  name,
 	})
@@ -72,7 +72,7 @@ func (ur *UserRepository) ListUsers(ctx context.Context) ([]models.User, error) 
 
 func (ur *UserRepository) UpdateUser(ctx context.Context, id int, email, name string) (*models.User, error) {
 
-	row, err := ur.q.UpdateUser(ctx, queries.UpdateUserParams{
+	row, err := ur.q.UpdateUser(ctx, sqlc.UpdateUserParams{
 		ID:    int32(id),
 		Email: email,
 		Name:  name,

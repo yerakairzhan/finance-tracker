@@ -11,11 +11,12 @@ import (
 	"log"
 	"os"
 	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"finance-tracker/db/queries"
+	sqlc "finance-tracker/db/queries"
 	"finance-tracker/pkg/handler"
 	"finance-tracker/pkg/repository"
 )
@@ -42,12 +43,12 @@ func Run() {
 
 	log.Println("Connected to PostgreSQL")
 
-	queries := sqlc.New(pool)
+	q := sqlc.New(pool)
 
 	// REPOSITORIES
-	userRepo := repository.NewUserRepository(queries)
-	accountRepo := repository.NewAccountRepository(queries)
-	transactionRepo := repository.NewTransactionRepository(queries)
+	userRepo := repository.NewUserRepository(q)
+	accountRepo := repository.NewAccountRepository(q)
+	transactionRepo := repository.NewTransactionRepository(q)
 
 	// HANDLERs
 	userHandler := handler.NewUserHandler(userRepo)
