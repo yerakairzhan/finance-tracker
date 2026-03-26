@@ -85,21 +85,13 @@ make docker-run
 API: `http://localhost:8080`  
 DB: `localhost:5435`
 
+The API now applies the embedded SQL migrations automatically on startup, so a fresh `docker compose up --build` should come up without any manual DB prep.
+
 Stop:
 
 ```bash
 make docker-stop
 ```
-
-## Migrations
-
-If your DB was created earlier with only `001_init.sql`, apply `002` manually:
-
-```bash
-psql "postgres://postgres:postgres@localhost:5435/finance_tracker?sslmode=disable" -f db/migrations/002_v1_core_schema.sql
-```
-
-Note: `docker-entrypoint-initdb.d` scripts run only on first DB initialization.
 
 ## Local Development
 

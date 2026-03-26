@@ -15,12 +15,14 @@ import (
 	"os"
 	"time"
 
+	"finance-tracker/db/migrations"
 	sqlc "finance-tracker/db/queries"
 	_ "finance-tracker/docs"
 	"finance-tracker/pkg/handler"
 	"finance-tracker/pkg/middleware"
 	"finance-tracker/pkg/repository"
 	"finance-tracker/pkg/service"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	swaggerFiles "github.com/swaggo/files"
@@ -28,11 +30,11 @@ import (
 )
 
 func Run() {
-	dbURL := getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5435/finance_tracker?sslmode=disable")
+	dbURL := getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/finance_tracker?sslmode=disable")
 	port := getenv("PORT", "8080")
 	jwtSecret := getenv("JWT_SECRET", "dev-jwt-secret-change-me")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	pool, err := pgxpool.New(ctx, dbURL)
@@ -43,6 +45,13 @@ func Run() {
 		log.Fatal("database unreachable: ", err)
 	}
 	log.Println("connected to PostgreSQL")
+
+	migrationCtx, migrationCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer migrationCancel()
+
+	if err = migrations.Run(migrationCtx, pool); err != nil {
+		log.Fatal("failed to apply migrations: ", err)
+	}
 
 	q := sqlc.New(pool)
 
