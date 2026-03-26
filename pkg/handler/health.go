@@ -1,17 +1,26 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
+	"finance-tracker/pkg/apperror"
 	"finance-tracker/pkg/service"
 	"github.com/gin-gonic/gin"
 )
 
 type HealthHandler struct {
-	healthService *service.HealthService
+	healthService healthService
+}
+
+type healthService interface {
+	Ready(ctx context.Context) *apperror.Error
 }
 
 func NewHealthHandler(healthService *service.HealthService) *HealthHandler {
+	if healthService == nil {
+		return &HealthHandler{}
+	}
 	return &HealthHandler{healthService: healthService}
 }
 

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"finance-tracker/pkg/apperror"
@@ -11,10 +12,19 @@ import (
 )
 
 type UserHandler struct {
-	userService *service.UserService
+	userService userService
+}
+
+type userService interface {
+	Me(ctx context.Context, userID int64) (*models.User, *apperror.Error)
+	UpdateMe(ctx context.Context, userID int64, req models.UpdateMeRequest) (*models.User, *apperror.Error)
+	ChangePassword(ctx context.Context, userID int64, req models.ChangePasswordRequest) *apperror.Error
 }
 
 func NewUserHandler(userService *service.UserService) *UserHandler {
+	if userService == nil {
+		return &UserHandler{}
+	}
 	return &UserHandler{userService: userService}
 }
 

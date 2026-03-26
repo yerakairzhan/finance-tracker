@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"finance-tracker/pkg/apperror"
@@ -11,10 +12,20 @@ import (
 )
 
 type AuthHandler struct {
-	authService *service.AuthService
+	authService authService
+}
+
+type authService interface {
+	Register(ctx context.Context, req models.RegisterRequest) (*models.AuthTokens, *apperror.Error)
+	Login(ctx context.Context, req models.LoginRequest) (*models.AuthTokens, *apperror.Error)
+	Refresh(ctx context.Context, rawRefreshToken string) (*models.AuthTokens, *apperror.Error)
+	Logout(ctx context.Context, userID int64, rawRefreshToken string) *apperror.Error
 }
 
 func NewAuthHandler(authService *service.AuthService) *AuthHandler {
+	if authService == nil {
+		return &AuthHandler{}
+	}
 	return &AuthHandler{authService: authService}
 }
 

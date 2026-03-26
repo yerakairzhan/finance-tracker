@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -12,10 +13,21 @@ import (
 )
 
 type AccountHandler struct {
-	accountService *service.AccountService
+	accountService accountService
+}
+
+type accountService interface {
+	List(ctx context.Context, userID int64) ([]models.Account, *apperror.Error)
+	Create(ctx context.Context, userID int64, req models.CreateAccountRequest) (*models.Account, *apperror.Error)
+	GetByID(ctx context.Context, userID, accountID int64) (*models.Account, *apperror.Error)
+	Update(ctx context.Context, userID, accountID int64, req models.UpdateAccountRequest) (*models.Account, *apperror.Error)
+	Delete(ctx context.Context, userID, accountID int64) *apperror.Error
 }
 
 func NewAccountHandler(accountService *service.AccountService) *AccountHandler {
+	if accountService == nil {
+		return &AccountHandler{}
+	}
 	return &AccountHandler{accountService: accountService}
 }
 

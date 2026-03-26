@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -12,10 +13,21 @@ import (
 )
 
 type TransactionHandler struct {
-	txService *service.TransactionService
+	txService transactionService
+}
+
+type transactionService interface {
+	List(ctx context.Context, userID int64, query models.ListTransactionsQuery) ([]models.Transaction, *apperror.Error)
+	Create(ctx context.Context, userID int64, req models.CreateTransactionRequest) (*models.Transaction, *apperror.Error)
+	GetByID(ctx context.Context, userID, txID int64) (*models.Transaction, *apperror.Error)
+	Update(ctx context.Context, userID, txID int64, req models.UpdateTransactionRequest) (*models.Transaction, *apperror.Error)
+	Delete(ctx context.Context, userID, txID int64) *apperror.Error
 }
 
 func NewTransactionHandler(txService *service.TransactionService) *TransactionHandler {
+	if txService == nil {
+		return &TransactionHandler{}
+	}
 	return &TransactionHandler{txService: txService}
 }
 
