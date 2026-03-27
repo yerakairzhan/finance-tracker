@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: finance-tracker-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - financial-network
+
   postgres:
     image: postgres:15-alpine
     container_name: finance-tracker-db
@@ -26,12 +40,16 @@ services:
     container_name: finance-tracker-api
     restart: unless-stopped
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/finance_tracker?sslmode=disable
       PORT: 8080
       JWT_SECRET: dev-jwt-secret-change-me
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
     ports:
       - "8080:8080"
     networks:

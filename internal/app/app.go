@@ -18,6 +18,7 @@ import (
 	"finance-tracker/db/migrations"
 	sqlc "finance-tracker/db/queries"
 	_ "finance-tracker/docs"
+	"finance-tracker/pkg/cache"
 	"finance-tracker/pkg/handler"
 	"finance-tracker/pkg/middleware"
 	"finance-tracker/pkg/repository"
@@ -33,6 +34,9 @@ func Run() {
 	dbURL := getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/finance_tracker?sslmode=disable")
 	port := getenv("PORT", "8080")
 	jwtSecret := getenv("JWT_SECRET", "dev-jwt-secret-change-me")
+	redisAddr := getenv("REDIS_ADDR", "localhost:6379")
+	redisPassword := getenv("REDIS_PASSWORD", "")
+	redisDB := 0
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -53,13 +57,20 @@ func Run() {
 		log.Fatal("failed to apply migrations: ", err)
 	}
 
+	redisClient := cache.NewRedisClient(redisAddr, redisPassword, redisDB)
+	if err = redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatal("failed to connect to redis: ", err)
+	}
+	log.Println("connected to Redis")
+	tokenBlocklist := cache.NewTokenBlocklist(redisClient)
+
 	q := sqlc.New(pool)
 
 	userRepo := repository.NewUserRepository(q)
 	accountRepo := repository.NewAccountRepository(q)
 	txRepo := repository.NewTransactionRepository(pool, q)
 
-	authService := service.NewAuthService(userRepo, jwtSecret)
+	authService := service.NewAuthService(userRepo, jwtSecret, tokenBlocklist)
 	userService := service.NewUserService(userRepo)
 	accountService := service.NewAccountService(accountRepo)
 	txService := service.NewTransactionService(txRepo)
@@ -84,7 +95,7 @@ func Run() {
 		authRoutes.POST("/refresh", authHandler.Refresh)
 
 		protected := v1.Group("")
-		protected.Use(middleware.JWTAuth(jwtSecret))
+		protected.Use(middleware.JWTAuth(jwtSecret, tokenBlocklist))
 		{
 			authProtected := protected.Group("/auth")
 			authProtected.POST("/logout", authHandler.Logout)

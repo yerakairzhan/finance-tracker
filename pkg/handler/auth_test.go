@@ -27,11 +27,12 @@ type authHandlerServiceSpy struct {
 	refreshCalls int
 	gotRefresh   string
 
-	logoutFn    func(ctx context.Context, userID int64, rawRefreshToken string) *apperror.Error
+	logoutFn    func(ctx context.Context, userID int64, rawRefreshToken, rawAccessToken string) *apperror.Error
 	logoutCalls int
 	gotLogout   struct {
 		userID       int64
 		refreshToken string
+		accessToken  string
 	}
 }
 
@@ -62,14 +63,15 @@ func (s *authHandlerServiceSpy) Refresh(ctx context.Context, rawRefreshToken str
 	return s.refreshFn(ctx, rawRefreshToken)
 }
 
-func (s *authHandlerServiceSpy) Logout(ctx context.Context, userID int64, rawRefreshToken string) *apperror.Error {
+func (s *authHandlerServiceSpy) Logout(ctx context.Context, userID int64, rawRefreshToken, rawAccessToken string) *apperror.Error {
 	s.logoutCalls++
 	s.gotLogout.userID = userID
 	s.gotLogout.refreshToken = rawRefreshToken
+	s.gotLogout.accessToken = rawAccessToken
 	if s.logoutFn == nil {
 		panic("unexpected call: Logout")
 	}
-	return s.logoutFn(ctx, userID, rawRefreshToken)
+	return s.logoutFn(ctx, userID, rawRefreshToken, rawAccessToken)
 }
 
 func TestNewAuthHandler(t *testing.T) {
@@ -413,12 +415,15 @@ func TestAuthHandler_Logout(t *testing.T) {
 	t.Run("success returns 204", func(t *testing.T) {
 		// Arrange
 		service := &authHandlerServiceSpy{
-			logoutFn: func(_ context.Context, userID int64, rawRefreshToken string) *apperror.Error {
+			logoutFn: func(_ context.Context, userID int64, rawRefreshToken, rawAccessToken string) *apperror.Error {
 				if userID != 42 {
 					t.Fatalf("unexpected user id: %d", userID)
 				}
 				if rawRefreshToken != "12345678901234567890123456789012" {
 					t.Fatalf("unexpected refresh token: %q", rawRefreshToken)
+				}
+				if rawAccessToken != "access-token-123" {
+					t.Fatalf("unexpected access token: %q", rawAccessToken)
 				}
 				return nil
 			},
@@ -429,6 +434,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 			(&AuthHandler{authService: service}).Logout(c)
 		})
 		req := newJSONRequest(t, http.MethodPost, "/api/v1/auth/logout", `{"refresh_token":"12345678901234567890123456789012"}`)
+		req.Header.Set("Authorization", "Bearer access-token-123")
 		rec := httptest.NewRecorder()
 
 		// Act
@@ -439,7 +445,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 		if service.logoutCalls != 1 {
 			t.Fatalf("expected Logout to be called once, got %d", service.logoutCalls)
 		}
-		if service.gotLogout.userID != 42 || service.gotLogout.refreshToken != "12345678901234567890123456789012" {
+		if service.gotLogout.userID != 42 || service.gotLogout.refreshToken != "12345678901234567890123456789012" || service.gotLogout.accessToken != "access-token-123" {
 			t.Fatalf("unexpected logout call: %+v", service.gotLogout)
 		}
 		if strings.TrimSpace(rec.Body.String()) != "" {
@@ -475,6 +481,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 		router := gin.New()
 		router.POST("/api/v1/auth/logout", (&AuthHandler{authService: service}).Logout)
 		req := newJSONRequest(t, http.MethodPost, "/api/v1/auth/logout", `{"refresh_token":"12345678901234567890123456789012"}`)
+		req.Header.Set("Authorization", "Bearer access-token-123")
 		rec := httptest.NewRecorder()
 
 		// Act
@@ -491,7 +498,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 	t.Run("service not found returns 404", func(t *testing.T) {
 		// Arrange
 		service := &authHandlerServiceSpy{
-			logoutFn: func(_ context.Context, _ int64, _ string) *apperror.Error {
+			logoutFn: func(_ context.Context, _ int64, _ string, _ string) *apperror.Error {
 				return apperror.NotFound("refresh token not found")
 			},
 		}
@@ -501,6 +508,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 			(&AuthHandler{authService: service}).Logout(c)
 		})
 		req := newJSONRequest(t, http.MethodPost, "/api/v1/auth/logout", `{"refresh_token":"12345678901234567890123456789012"}`)
+		req.Header.Set("Authorization", "Bearer access-token-123")
 		rec := httptest.NewRecorder()
 
 		// Act
@@ -517,7 +525,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 	t.Run("service internal error returns 500", func(t *testing.T) {
 		// Arrange
 		service := &authHandlerServiceSpy{
-			logoutFn: func(_ context.Context, _ int64, _ string) *apperror.Error {
+			logoutFn: func(_ context.Context, _ int64, _ string, _ string) *apperror.Error {
 				return apperror.Internal("failed to revoke refresh token")
 			},
 		}
@@ -527,6 +535,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 			(&AuthHandler{authService: service}).Logout(c)
 		})
 		req := newJSONRequest(t, http.MethodPost, "/api/v1/auth/logout", `{"refresh_token":"12345678901234567890123456789012"}`)
+		req.Header.Set("Authorization", "Bearer access-token-123")
 		rec := httptest.NewRecorder()
 
 		// Act

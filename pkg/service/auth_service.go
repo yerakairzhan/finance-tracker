@@ -8,6 +8,7 @@ import (
 	"finance-tracker/pkg/auth"
 	"finance-tracker/pkg/models"
 	"finance-tracker/pkg/repository"
+
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
@@ -16,10 +17,15 @@ import (
 type AuthService struct {
 	users     *repository.UserRepository
 	jwtSecret string
+	blocklist tokenBlocklist
 }
 
-func NewAuthService(users *repository.UserRepository, jwtSecret string) *AuthService {
-	return &AuthService{users: users, jwtSecret: jwtSecret}
+type tokenBlocklist interface {
+	Revoke(ctx context.Context, tokenID string, ttl time.Duration) error
+}
+
+func NewAuthService(users *repository.UserRepository, jwtSecret string, blocklist tokenBlocklist) *AuthService {
+	return &AuthService{users: users, jwtSecret: jwtSecret, blocklist: blocklist}
 }
 
 func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) (*models.AuthTokens, *apperror.Error) {
@@ -81,7 +87,7 @@ func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*mod
 	return s.issueTokens(ctx, matchedUserID, time.Now().UTC())
 }
 
-func (s *AuthService) Logout(ctx context.Context, userID int64, rawRefreshToken string) *apperror.Error {
+func (s *AuthService) Logout(ctx context.Context, userID int64, rawRefreshToken, rawAccessToken string) *apperror.Error {
 	tokens, err := s.users.ListValidRefreshTokensByUser(ctx, userID)
 	if err != nil {
 		return apperror.Internal("failed to load refresh token")
@@ -104,6 +110,21 @@ func (s *AuthService) Logout(ctx context.Context, userID int64, rawRefreshToken 
 	}
 	if affected == 0 {
 		return apperror.NotFound("refresh token not found")
+	}
+
+	claims, err := auth.ParseAccessToken(s.jwtSecret, rawAccessToken)
+	if err != nil {
+		return apperror.Unauthorized("invalid or expired token")
+	}
+	if claims.ID == "" || claims.ExpiresAt == nil {
+		return apperror.Unauthorized("invalid token")
+	}
+
+	ttl := time.Until(claims.ExpiresAt.Time)
+	if ttl > 0 {
+		if err = s.blocklist.Revoke(ctx, claims.ID, ttl); err != nil {
+			return apperror.Internal("failed to revoke access token")
+		}
 	}
 	return nil
 }

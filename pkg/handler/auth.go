@@ -16,7 +16,7 @@ type authService interface {
 	Register(ctx context.Context, req models.RegisterRequest) (*models.AuthTokens, *apperror.Error)
 	Login(ctx context.Context, req models.LoginRequest) (*models.AuthTokens, *apperror.Error)
 	Refresh(ctx context.Context, rawRefreshToken string) (*models.AuthTokens, *apperror.Error)
-	Logout(ctx context.Context, userID int64, rawRefreshToken string) *apperror.Error
+	Logout(ctx context.Context, userID int64, rawRefreshToken, rawAccessToken string) *apperror.Error
 }
 
 type AuthHandler struct {
@@ -133,7 +133,12 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		writeError(c, apperror.Unauthorized("invalid token context"))
 		return
 	}
-	if appErr := h.authService.Logout(c.Request.Context(), userID, req.RefreshToken); appErr != nil {
+	accessToken, authErr := middleware.AccessTokenFromHeader(c.GetHeader("Authorization"))
+	if authErr != nil {
+		writeError(c, authErr)
+		return
+	}
+	if appErr := h.authService.Logout(c.Request.Context(), userID, req.RefreshToken, accessToken); appErr != nil {
 		writeError(c, appErr)
 		return
 	}

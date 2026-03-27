@@ -7,6 +7,7 @@ Current implemented scope is **v1 core**: auth, users, accounts, transactions, a
 
 - Go + Gin
 - PostgreSQL
+- Redis
 - sqlc + pgx
 - Docker / Docker Compose
 - Swagger (OpenAPI)
@@ -48,6 +49,7 @@ Swagger UI: `http://localhost:8080/docs/index.html`
 - Accounts and transactions use soft-delete (`deleted_at`).
 - JWT access token TTL: 15 minutes.
 - Refresh token TTL: 30 days; stored as bcrypt hash in `refresh_tokens`.
+- Logout revokes access token in Redis until JWT expiry.
 - User ownership is enforced using JWT `user_id` in DB queries.
 - Unified error envelope:
 
@@ -99,10 +101,49 @@ make docker-stop
 export DATABASE_URL=postgres://postgres:postgres@localhost:5435/finance_tracker?sslmode=disable
 export PORT=8080
 export JWT_SECRET=change-me
+export REDIS_ADDR=localhost:6379
+export REDIS_PASSWORD=
 
 go mod tidy
 make sqlc
 go run ./cmd/api
+```
+
+## Redis Integration Examples
+
+### 1) Start dependencies (Postgres + Redis + API)
+
+```bash
+make docker-run
+```
+
+### 2) Local run with explicit Redis config
+
+```bash
+REDIS_ADDR=localhost:6379 REDIS_PASSWORD="" DATABASE_URL=postgres://postgres:postgres@localhost:5435/finance_tracker?sslmode=disable PORT=8080 JWT_SECRET=change-me go run ./cmd/api
+```
+
+### 3) Behavior example: logout invalidates current access token
+
+```bash
+# login (example payload)
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"john@example.com","password":"password123"}'
+
+# call protected endpoint with access token -> 200
+curl -i http://localhost:8080/api/v1/users/me \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# logout with refresh token + same bearer access token -> 204
+curl -i -X POST http://localhost:8080/api/v1/auth/logout \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -d '{"refresh_token":"<REFRESH_TOKEN>"}'
+
+# same access token is now revoked in Redis -> 401
+curl -i http://localhost:8080/api/v1/users/me \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
 ```
 
 ## Docs

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -20,6 +21,11 @@ type Claims struct {
 }
 
 func GenerateAccessToken(secret string, userID int64, now time.Time) (string, error) {
+	tokenID, err := generateTokenID()
+	if err != nil {
+		return "", err
+	}
+
 	claims := Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -27,6 +33,7 @@ func GenerateAccessToken(secret string, userID int64, now time.Time) (string, er
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Subject:   "access",
+			ID:        tokenID,
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -56,4 +63,12 @@ func GenerateRefreshToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func generateTokenID() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", buf), nil
 }

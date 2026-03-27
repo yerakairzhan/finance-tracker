@@ -1,14 +1,20 @@
 package middleware
 
 import (
+	"context"
 	"strings"
 
 	"finance-tracker/pkg/apperror"
 	"finance-tracker/pkg/auth"
+
 	"github.com/gin-gonic/gin"
 )
 
 const userIDContextKey = "auth_user_id"
+
+type tokenBlocklist interface {
+	IsRevoked(ctx context.Context, tokenID string) (bool, error)
+}
 
 func UserIDFromContext(c *gin.Context) (int64, bool) {
 	v, ok := c.Get(userIDContextKey)
@@ -19,21 +25,40 @@ func UserIDFromContext(c *gin.Context) (int64, bool) {
 	return id, ok
 }
 
-func JWTAuth(secret string) gin.HandlerFunc {
+func AccessTokenFromHeader(authz string) (string, *apperror.Error) {
+	if authz == "" {
+		return "", apperror.Unauthorized("missing bearer token")
+	}
+	parts := strings.SplitN(authz, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
+		return "", apperror.Unauthorized("invalid authorization header")
+	}
+	return strings.TrimSpace(parts[1]), nil
+}
+
+func JWTAuth(secret string, blocklist tokenBlocklist) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authz := c.GetHeader("Authorization")
-		if authz == "" {
-			writeAbort(c, apperror.Unauthorized("missing bearer token"))
+		rawToken, authErr := AccessTokenFromHeader(c.GetHeader("Authorization"))
+		if authErr != nil {
+			writeAbort(c, authErr)
 			return
 		}
-		parts := strings.SplitN(authz, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
-			writeAbort(c, apperror.Unauthorized("invalid authorization header"))
-			return
-		}
-		claims, err := auth.ParseAccessToken(secret, strings.TrimSpace(parts[1]))
+		claims, err := auth.ParseAccessToken(secret, rawToken)
 		if err != nil {
 			writeAbort(c, apperror.Unauthorized("invalid or expired token"))
+			return
+		}
+		if claims.ID == "" {
+			writeAbort(c, apperror.Unauthorized("invalid token"))
+			return
+		}
+		revoked, err := blocklist.IsRevoked(c.Request.Context(), claims.ID)
+		if err != nil {
+			writeAbort(c, apperror.Internal("failed to verify token"))
+			return
+		}
+		if revoked {
+			writeAbort(c, apperror.Unauthorized("token has been revoked"))
 			return
 		}
 		c.Set(userIDContextKey, claims.UserID)
