@@ -111,3 +111,39 @@ type UpdateTransactionRequest struct {
 	CategoryID *int64  `json:"category_id" binding:"omitempty,min=1"`
 	Notes      *string `json:"notes" binding:"omitempty,max=1000"`
 }
+
+type AnalyticsRangeQuery struct {
+	From *string `form:"from" binding:"omitempty,datetime=2006-01-02"`
+	To   *string `form:"to" binding:"omitempty,datetime=2006-01-02"`
+}
+
+type AnalyticsSummary struct {
+	PeriodStart string `json:"period_start"`
+	PeriodEnd   string `json:"period_end"`
+	Income      string `json:"income"`
+	Expense     string `json:"expense"`
+	Profit      string `json:"profit"`
+}
+
+type AnalyticsDailyPoint struct {
+	Date    string `json:"date"`
+	Income  string `json:"income"`
+	Expense string `json:"expense"`
+	Profit  string `json:"profit"`
+}
+
+type AnalyticsCategoryExpense struct {
+	Category string `json:"category"`
+	Amount   string `json:"amount"`
+}
+
+type AnalyticsMonthlyProfitQuery struct {
+	Months int `form:"months,default=6" binding:"min=1,max=24"`
+}
+
+type AnalyticsMonthlyProfitPoint struct {
+	Month  string `json:"month"`
+	Income string `json:"income"`
+	Expense string `json:"expense"`
+	Profit string `json:"profit"`
+}

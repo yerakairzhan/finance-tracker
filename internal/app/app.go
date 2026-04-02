@@ -76,12 +76,14 @@ func Run() {
 	userService := service.NewUserService(userRepo)
 	accountService := service.NewAccountService(accountRepo)
 	txService := service.NewTransactionService(txRepo)
+	analyticsService := service.NewAnalyticsService(txRepo)
 	healthService := service.NewHealthService(pool)
 
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(userService)
 	accountHandler := handler.NewAccountHandler(accountService)
 	transactionHandler := handler.NewTransactionHandler(txService)
+	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	healthHandler := handler.NewHealthHandler(healthService)
 
 	router := gin.Default()
@@ -128,6 +130,12 @@ func Run() {
 			txRoutes.GET("/:id", transactionHandler.GetByID)
 			txRoutes.PATCH("/:id", transactionHandler.Update)
 			txRoutes.DELETE("/:id", transactionHandler.Delete)
+
+			analyticsRoutes := protected.Group("/analytics")
+			analyticsRoutes.GET("/summary/last-month", analyticsHandler.LastMonthSummary)
+			analyticsRoutes.GET("/daily-profit", analyticsHandler.DailyProfit)
+			analyticsRoutes.GET("/expense-categories/last-month", analyticsHandler.LastMonthExpenseByCategory)
+			analyticsRoutes.GET("/monthly-profit", analyticsHandler.MonthlyProfit)
 		}
 	}
 
