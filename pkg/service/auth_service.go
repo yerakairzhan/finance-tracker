@@ -6,6 +6,7 @@ import (
 
 	"finance-tracker/pkg/apperror"
 	"finance-tracker/pkg/auth"
+	"finance-tracker/pkg/cache"
 	"finance-tracker/pkg/models"
 	"finance-tracker/pkg/repository"
 
@@ -15,17 +16,38 @@ import (
 )
 
 type AuthService struct {
-	users     *repository.UserRepository
-	jwtSecret string
-	blocklist tokenBlocklist
+	users         *repository.UserRepository
+	jwtSecret     string
+	blocklist     tokenBlocklist
+	refreshStore  refreshSessionStore
+	refreshPepper string
 }
 
 type tokenBlocklist interface {
 	Revoke(ctx context.Context, tokenID string, ttl time.Duration) error
 }
 
-func NewAuthService(users *repository.UserRepository, jwtSecret string, blocklist tokenBlocklist) *AuthService {
-	return &AuthService{users: users, jwtSecret: jwtSecret, blocklist: blocklist}
+type refreshSessionStore interface {
+	CreateRefreshSession(ctx context.Context, tokenHash string, userID int64, ttl time.Duration) error
+	GetRefreshSession(ctx context.Context, tokenHash string) (*cache.RefreshSession, error)
+	DeleteRefreshSession(ctx context.Context, tokenHash string) error
+	RotateRefreshSession(ctx context.Context, oldTokenHash, newTokenHash string, userID int64, ttl time.Duration) error
+}
+
+func NewAuthService(
+	users *repository.UserRepository,
+	jwtSecret string,
+	blocklist tokenBlocklist,
+	refreshStore refreshSessionStore,
+	refreshPepper string,
+) *AuthService {
+	return &AuthService{
+		users:         users,
+		jwtSecret:     jwtSecret,
+		blocklist:     blocklist,
+		refreshStore:  refreshStore,
+		refreshPepper: refreshPepper,
+	}
 }
 
 func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) (*models.AuthTokens, *apperror.Error) {
@@ -50,6 +72,7 @@ func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) 
 	return tokens, nil
 }
 
+// Login: create refresh session in Redis (hashed token), return refresh token only for cookie setting.
 func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*models.AuthTokens, *apperror.Error) {
 	user, err := s.users.GetByEmail(ctx, req.Email)
 	if err != nil {
@@ -58,33 +81,62 @@ func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*mode
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
 		return nil, apperror.Unauthorized("invalid credentials")
 	}
-	return s.issueTokens(ctx, user.ID, time.Now().UTC())
+
+	now := time.Now().UTC()
+	accessToken, err := auth.GenerateAccessToken(s.jwtSecret, user.ID, now)
+	if err != nil {
+		return nil, apperror.Internal("failed to issue access token")
+	}
+	refreshToken, err := auth.GenerateRefreshToken()
+	if err != nil {
+		return nil, apperror.Internal("failed to issue refresh token")
+	}
+	refreshHash, err := auth.HashRefreshToken(s.refreshPepper, refreshToken)
+	if err != nil {
+		return nil, apperror.Internal("failed to hash refresh token")
+	}
+	if err := s.refreshStore.CreateRefreshSession(ctx, refreshHash, user.ID, auth.RefreshTokenTTL); err != nil {
+		return nil, apperror.Internal("failed to store refresh token")
+	}
+
+	return &models.AuthTokens{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken, // internal only; handler must put into HttpOnly cookie only.
+		ExpiresIn:    int(auth.AccessTokenTTL.Seconds()),
+	}, nil
 }
 
-func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*models.AuthTokens, *apperror.Error) {
-	tokens, err := s.users.ListValidRefreshTokens(ctx)
+func (s *AuthService) Refresh(ctx context.Context, refreshToken string) (*models.AuthTokens, *apperror.Error) {
+	oldHash, err := auth.HashRefreshToken(s.refreshPepper, refreshToken)
 	if err != nil {
-		return nil, apperror.Internal("failed to load refresh token")
+		return nil, apperror.Internal("failed to hash refresh token")
 	}
-
-	var matchedID int64
-	var matchedUserID int64
-	for _, item := range tokens {
-		if bcrypt.CompareHashAndPassword([]byte(item.TokenHash), []byte(rawRefreshToken)) == nil {
-			matchedID = item.ID
-			matchedUserID = item.UserID
-			break
-		}
-	}
-	if matchedID == 0 {
+	session, err := s.refreshStore.GetRefreshSession(ctx, oldHash)
+	if err != nil || session == nil || session.UserID <= 0 {
 		return nil, apperror.Unauthorized("invalid refresh token")
 	}
 
-	if _, err = s.users.RevokeRefreshTokenByID(ctx, matchedID); err != nil {
+	newRefreshToken, err := auth.GenerateRefreshToken()
+	if err != nil {
+		return nil, apperror.Internal("failed to issue refresh token")
+	}
+	newHash, err := auth.HashRefreshToken(s.refreshPepper, newRefreshToken)
+	if err != nil {
+		return nil, apperror.Internal("failed to hash refresh token")
+	}
+	if err := s.refreshStore.RotateRefreshSession(ctx, oldHash, newHash, session.UserID, auth.RefreshTokenTTL); err != nil {
 		return nil, apperror.Internal("failed to rotate refresh token")
 	}
 
-	return s.issueTokens(ctx, matchedUserID, time.Now().UTC())
+	accessToken, err := auth.GenerateAccessToken(s.jwtSecret, session.UserID, time.Now().UTC())
+	if err != nil {
+		return nil, apperror.Internal("failed to issue access token")
+	}
+	return &models.AuthTokens{
+		AccessToken:  accessToken,
+		RefreshToken: newRefreshToken, // internal only; handler must put into cookie.
+		ExpiresIn:    int(auth.AccessTokenTTL.Seconds()),
+	}, nil
 }
 
 func (s *AuthService) Logout(ctx context.Context, userID int64, rawRefreshToken, rawAccessToken string) *apperror.Error {

@@ -1,10 +1,14 @@
 package auth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -59,6 +63,39 @@ func ParseAccessToken(secret, raw string) (*Claims, error) {
 
 func GenerateRefreshToken() (string, error) {
 	buf := make([]byte, 48)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func HashToken(pepper, rawToken, purpose string) (string, error) {
+	if strings.TrimSpace(rawToken) == "" {
+		return "", errors.New("empty token")
+	}
+	if strings.TrimSpace(pepper) == "" {
+		return "", errors.New("empty token pepper")
+	}
+	if strings.TrimSpace(purpose) == "" {
+		return "", errors.New("empty token purpose")
+	}
+	mac := hmac.New(sha256.New, []byte(pepper))
+	_, _ = mac.Write([]byte(purpose))
+	_, _ = mac.Write([]byte(":"))
+	_, _ = mac.Write([]byte(rawToken))
+	return hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+func HashRefreshToken(pepper, refreshToken string) (string, error) {
+	return HashToken(pepper, refreshToken, "refresh")
+}
+
+func HashAccessToken(pepper, accessToken string) (string, error) {
+	return HashToken(pepper, accessToken, "access")
+}
+
+func GenerateCSRFToken() (string, error) {
+	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}

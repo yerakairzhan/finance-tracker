@@ -10,9 +10,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"finance-tracker/db/migrations"
@@ -38,7 +42,13 @@ func Run() {
 	redisAddr := getenv("REDIS_ADDR", "localhost:6379")
 	redisPassword := getenv("REDIS_PASSWORD", "")
 	frontendOrigin := getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+	cookieSameSite := parseSameSite(getenv("COOKIE_SAMESITE", "strict"))
+	refreshPepper := getenv("REFRESH_TOKEN_PEPPER", "dev-refresh-pepper-change-me")
 	redisDB := 0
+	accessTokenResponseMode := strings.ToLower(strings.TrimSpace(getenv("ACCESS_TOKEN_RESPONSE_MODE", "omit"))) // hashed|omit
+	if accessTokenResponseMode != "hashed" && accessTokenResponseMode != "omit" {
+		accessTokenResponseMode = "omit"
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -65,6 +75,7 @@ func Run() {
 	}
 	log.Println("connected to Redis")
 	tokenBlocklist := cache.NewTokenBlocklist(redisClient)
+	refreshStore := cache.NewRefreshSessionStore(redisClient)
 
 	q := sqlc.New(pool)
 
@@ -72,7 +83,13 @@ func Run() {
 	accountRepo := repository.NewAccountRepository(q)
 	txRepo := repository.NewTransactionRepository(pool, q)
 
-	authService := service.NewAuthService(userRepo, jwtSecret, tokenBlocklist)
+	authService := service.NewAuthService(
+		userRepo,
+		jwtSecret,
+		tokenBlocklist,
+		refreshStore,
+		refreshPepper,
+	)
 	userService := service.NewUserService(userRepo)
 	accountService := service.NewAccountService(accountRepo)
 	txService := service.NewTransactionService(txRepo)
@@ -86,11 +103,20 @@ func Run() {
 	analyticsHandler := handler.NewAnalyticsHandler(analyticsService)
 	healthHandler := handler.NewHealthHandler(healthService)
 
+	authRateLimiter := middleware.NewAuthRateLimiter(redisClient, middleware.AuthRateLimitConfig{
+		LoginLimit:    10,
+		LoginWindow:   5 * time.Minute,
+		RefreshLimit:  30,
+		RefreshWindow: 5 * time.Minute,
+	})
+	csrfRequired := cookieSameSite == http.SameSiteNoneMode
+
 	router := gin.Default()
+	router.Use(sanitizeAuthResponseMiddleware()) // no token hashing, only sensitive field stripping
 	router.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{frontendOrigin},
 		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-CSRF-Token"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
@@ -103,14 +129,14 @@ func Run() {
 	{
 		authRoutes := v1.Group("/auth")
 		authRoutes.POST("/register", authHandler.Register)
-		authRoutes.POST("/login", authHandler.Login)
-		authRoutes.POST("/refresh", authHandler.Refresh)
+		authRoutes.POST("/login", authRateLimiter.LoginLimiter(), authHandler.Login)
+		authRoutes.POST("/refresh", authRateLimiter.RefreshLimiter(), middleware.DoubleSubmitCSRF(csrfRequired), authHandler.Refresh)
 
 		protected := v1.Group("")
 		protected.Use(middleware.JWTAuth(jwtSecret, tokenBlocklist))
 		{
 			authProtected := protected.Group("/auth")
-			authProtected.POST("/logout", authHandler.Logout)
+			authProtected.POST("/logout", middleware.DoubleSubmitCSRF(csrfRequired), authHandler.Logout)
 
 			userRoutes := protected.Group("/users")
 			userRoutes.GET("/me", userHandler.Me)
@@ -145,10 +171,106 @@ func Run() {
 	}
 }
 
+func parseSameSite(v string) http.SameSite {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "none":
+		return http.SameSiteNoneMode
+	case "lax":
+		return http.SameSiteLaxMode
+	default:
+		return http.SameSiteStrictMode
+	}
+}
+
 func getenv(key, fallback string) string {
 	value := os.Getenv(key)
 	if value == "" {
 		return fallback
 	}
 	return value
+}
+
+type responseCaptureWriter struct {
+	gin.ResponseWriter
+	body       bytes.Buffer
+	statusCode int
+}
+
+func (w *responseCaptureWriter) WriteHeader(code int) { w.statusCode = code }
+func (w *responseCaptureWriter) WriteHeaderNow()      {}
+func (w *responseCaptureWriter) Write(data []byte) (int, error) {
+	return w.body.Write(data)
+}
+func (w *responseCaptureWriter) WriteString(s string) (int, error) {
+	return w.body.WriteString(s)
+}
+
+func sanitizeAuthResponseMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !isAuthTokenResponsePath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
+
+		original := c.Writer
+		capture := &responseCaptureWriter{ResponseWriter: original, statusCode: http.StatusOK}
+		c.Writer = capture
+		c.Next()
+
+		status := capture.statusCode
+		if status == 0 {
+			status = original.Status()
+			if status == 0 {
+				status = http.StatusOK
+			}
+		}
+
+		sanitized := sanitizeTokenFields(capture.body.Bytes())
+		original.Header().Del("Content-Length")
+		original.WriteHeader(status)
+		_, _ = original.Write(sanitized)
+	}
+}
+
+func isAuthTokenResponsePath(path string) bool {
+	p := strings.TrimSpace(path)
+	if len(p) > 1 {
+		p = strings.TrimRight(p, "/")
+	}
+	switch p {
+	case "/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/refresh":
+		return true
+	default:
+		return false
+	}
+}
+
+func sanitizeTokenFields(body []byte) []byte {
+	if len(body) == 0 {
+		return body
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+
+	changed := false
+
+	// Never expose refresh/session internals in JSON
+	for _, k := range []string{"refresh_token", "refresh_session_id", "session_id", "jti", "token_id"} {
+		if _, ok := payload[k]; ok {
+			delete(payload, k)
+			changed = true
+		}
+	}
+
+	if !changed {
+		return body
+	}
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return out
 }

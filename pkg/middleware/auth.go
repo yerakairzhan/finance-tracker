@@ -52,14 +52,16 @@ func JWTAuth(secret string, blocklist tokenBlocklist) gin.HandlerFunc {
 			writeAbort(c, apperror.Unauthorized("invalid token"))
 			return
 		}
-		revoked, err := blocklist.IsRevoked(c.Request.Context(), claims.ID)
-		if err != nil {
-			writeAbort(c, apperror.Internal("failed to verify token"))
-			return
-		}
-		if revoked {
-			writeAbort(c, apperror.Unauthorized("token has been revoked"))
-			return
+		if blocklist != nil {
+			revoked, err := blocklist.IsRevoked(c.Request.Context(), claims.ID)
+			if err != nil {
+				writeAbort(c, apperror.Internal("failed to verify token"))
+				return
+			}
+			if revoked {
+				writeAbort(c, apperror.Unauthorized("token has been revoked"))
+				return
+			}
 		}
 		c.Set(userIDContextKey, claims.UserID)
 		c.Next()
